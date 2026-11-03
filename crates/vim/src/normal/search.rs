@@ -860,6 +860,45 @@ mod test {
     use settings::SettingsStore;
 
     #[test]
+    fn test_replacement_parse_repetition_operators() {
+        let search = |query: &str| {
+            super::Replacement::parse(query.chars().peekable())
+                .expect("parse should succeed")
+                .search
+        };
+
+        assert_eq!(search(r"/\([0-9]\+\)/x/"), "([0-9]+)");
+        assert_eq!(search(r"/a\=b\?/x/"), "a?b?");
+        assert_eq!(search(r"/foo\|bar/x/"), "foo|bar");
+        assert_eq!(search(r"/[0-9]\{2\}/x/"), "[0-9]{2}");
+        assert_eq!(search(r"/[0-9]\{2}/x/"), "[0-9]{2}");
+        assert_eq!(search(r"/a\{2,}/x/"), "a{2,}");
+        assert_eq!(search(r"/a\{,3}/x/"), "a{0,3}");
+        assert_eq!(search(r"/a\{1,3}/x/"), "a{1,3}");
+        assert_eq!(search(r"/a\{}/x/"), "a*");
+        assert_eq!(search(r"/a\{-}/x/"), "a*?");
+        assert_eq!(search(r"/a\{-1,}/x/"), "a{1,}?");
+    }
+
+    #[test]
+    fn test_replacement_parse_literal_operators() {
+        let search = |query: &str| {
+            super::Replacement::parse(query.chars().peekable())
+                .expect("parse should succeed")
+                .search
+        };
+
+        // these are literal characters in a vim pattern
+        assert_eq!(search(r"/a+b?c|d/x/"), r"a\+b\?c\|d");
+        assert_eq!(search(r"/${a}/x/"), r"$\{a\}");
+        assert_eq!(search(r"/a\}/x/"), r"a\}");
+        assert_eq!(search(r"/a\{x}/x/"), r"a\{x\}");
+        // an escaped delimiter is always literal
+        assert_eq!(search(r"+a\+b+x+"), r"a\+b");
+        assert_eq!(search(r"?a\?b?x?"), r"a\?b");
+    }
+
+    #[test]
     fn test_replacement_parse_escaped_dollar() {
         let parsed = super::Replacement::parse(r"/\$test/\$rest/g".chars().peekable())
             .expect("parse should succeed");
@@ -1353,6 +1392,63 @@ mod test {
             "Base=hello
             ˇecho $BaseNew"
         });
+    }
+
+    #[gpui::test]
+    async fn test_replace_with_repetition_operators(cx: &mut gpui::TestAppContext) {
+        let mut cx = VimTestContext::new(cx, true).await;
+        cx.set_state(
+            indoc! {"
+                ˇ${Base}/Clickhouse01
+                ${Base}/Clickhouse02"
+            },
+            Mode::Normal,
+        );
+
+        cx.simulate_keystrokes(
+            ": % s = \\ $ { shift-b a s e } / shift-c l i c k h o u s e \\ ( [ 0 - 9 ] \\ { 2 \\ } \\ ) = \\ 1 = g",
+        );
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        cx.assert_state(
+            indoc! {"
+                01
+                ˇ02"
+            },
+            Mode::Normal,
+        );
+
+        cx.set_state(
+            indoc! {"
+                ˇab1
+                ab22
+                a+b"
+            },
+            Mode::Normal,
+        );
+        cx.simulate_keystrokes(": % s / a \\ + b / x / g");
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        cx.assert_state(
+            indoc! {"
+                x1
+                ˇx22
+                a+b"
+            },
+            Mode::Normal,
+        );
+
+        cx.simulate_keystrokes(": % s / a + b / y / g");
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        cx.assert_state(
+            indoc! {"
+                x1
+                x22
+                ˇy"
+            },
+            Mode::Normal,
+        );
     }
 
     #[gpui::test]
