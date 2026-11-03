@@ -653,9 +653,18 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
+    use std::{
+        collections::HashMap,
+        path::Path,
+        process::{ExitStatus, Output},
+        sync::Arc,
+    };
+
+    use async_trait::async_trait;
+    use util::command::Command;
 
     use crate::{
+        command_json::CommandRunner,
         devcontainer_api::DevContainerError,
         devcontainer_json::{
             ContainerBuild, DevContainer, DevContainerBuildType, FeatureOptions, ForwardPort,
@@ -664,6 +673,50 @@ mod test {
             ZedCustomizationsWrapper, deserialize_devcontainer_json,
         },
     };
+
+    struct ExitCodeCommandRunner(i32);
+
+    #[async_trait]
+    impl CommandRunner for ExitCodeCommandRunner {
+        async fn run_command(&self, _command: &mut Command) -> Result<Output, std::io::Error> {
+            #[cfg(unix)]
+            let status = {
+                use std::os::unix::process::ExitStatusExt;
+                ExitStatus::from_raw(self.0 << 8)
+            };
+            #[cfg(windows)]
+            let status = {
+                use std::os::windows::process::ExitStatusExt;
+                ExitStatus::from_raw(self.0 as u32)
+            };
+            Ok(Output {
+                status,
+                stdout: vec![],
+                stderr: b"init failed".to_vec(),
+            })
+        }
+    }
+
+    #[test]
+    fn lifecycle_script_fails_when_command_exits_unsuccessfully() {
+        let script = LifecycleScript::from_args(vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            "exit 1".to_string(),
+        ]);
+
+        let failing: Arc<dyn CommandRunner> = Arc::new(ExitCodeCommandRunner(1));
+        assert_eq!(
+            futures::executor::block_on(script.run(&failing, Path::new("."))),
+            Err(DevContainerError::CommandFailed("sh".to_string()))
+        );
+
+        let succeeding: Arc<dyn CommandRunner> = Arc::new(ExitCodeCommandRunner(0));
+        assert_eq!(
+            futures::executor::block_on(script.run(&succeeding, Path::new("."))),
+            Ok(())
+        );
+    }
 
     #[test]
     fn override_command_defaults_depend_on_build_type() {
