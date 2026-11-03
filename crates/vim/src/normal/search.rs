@@ -691,6 +691,7 @@ impl Replacement {
     // convert a vim query into something more usable by zed.
     // we don't attempt to fully convert between the two regex syntaxes,
     // but we do flip \( and \) to ( and ) (and vice-versa) in the pattern,
+    // do the same for the \+, \?, \= and \| operators and \{n,m} repetitions,
     // convert \0..\9 to $0..$9 in the replacement so that common idioms work,
     // and escape literal `$` to `$$` in the replacement so vim's literal `$`
     // is not interpreted as a Rust regex capture-group reference.
@@ -711,16 +712,27 @@ impl Replacement {
         // 2 - parsing flags
         let mut phase = 0;
 
-        for c in chars {
+        while let Some(c) = chars.next() {
             if escaped {
                 escaped = false;
-                if phase == 1 && c.is_ascii_digit() {
+                if phase == 0 && c == delimiter {
+                    // an escaped delimiter is always a literal character
+                    if is_flipped_operator(c) {
+                        buffer.push('\\')
+                    }
+                } else if phase == 0 && c == '{' {
+                    buffer.push_str(&parse_repetition(&mut chars));
+                    continue;
+                } else if phase == 0 && c == '=' {
+                    buffer.push('?');
+                    continue;
+                } else if phase == 1 && c.is_ascii_digit() {
                     buffer.push('$')
                 } else if phase == 1 && c == '$' {
                     // Second '$' escapes by fallthrough
                     buffer.push('$')
-                // unescape escaped parens
-                } else if phase == 0 && (c == '(' || c == ')') {
+                // unescape escaped parens and operators (a stray \} stays literal)
+                } else if phase == 0 && is_flipped_operator(c) && c != '}' {
                 } else if c != delimiter {
                     buffer.push('\\')
                 }
@@ -738,8 +750,8 @@ impl Replacement {
                     break;
                 }
             } else {
-                // escape unescaped parens
-                if phase == 0 && (c == '(' || c == ')') {
+                // escape unescaped parens and operators
+                if phase == 0 && is_flipped_operator(c) {
                     buffer.push('\\')
                 } else if phase == 1 && c == '$' {
                     // '$' is not special in the replacement clause,
@@ -771,6 +783,65 @@ impl Replacement {
         }
 
         Some(replacement)
+    }
+}
+
+// Characters that are literal in a vim pattern but special in a regex, and
+// special in a vim pattern when escaped.
+fn is_flipped_operator(c: char) -> bool {
+    matches!(c, '(' | ')' | '+' | '?' | '|' | '{' | '}')
+}
+
+// Converts the body of a vim `\{n,m}` repetition (with the opening `\{`
+// already consumed) into the equivalent regex quantifier. A leading `-`
+// makes the repetition non-greedy, and the closing brace may be escaped.
+// Anything that isn't a valid repetition is kept as literal text.
+fn parse_repetition(chars: &mut Peekable<Chars>) -> String {
+    let mut body = String::new();
+    let mut closed = false;
+    while let Some(&c) = chars.peek() {
+        if c == '}' {
+            chars.next();
+            closed = true;
+            break;
+        }
+        if c == '\\' {
+            let mut ahead = chars.clone();
+            ahead.next();
+            if ahead.peek() == Some(&'}') {
+                chars.next();
+                chars.next();
+                closed = true;
+            }
+            break;
+        }
+        if !(c.is_ascii_digit() || c == ',' || (c == '-' && body.is_empty())) {
+            break;
+        }
+        body.push(c);
+        chars.next();
+    }
+
+    let (lazy, bounds) = match body.strip_prefix('-') {
+        Some(bounds) => (true, bounds),
+        None => (false, body.as_str()),
+    };
+    let quantifier = match bounds.split_once(',') {
+        _ if !closed => None,
+        Some((_, max)) if max.contains(',') => None,
+        None if bounds.is_empty() => Some("*".to_string()),
+        None => Some(format!("{{{bounds}}}")),
+        Some(("", "")) => Some("*".to_string()),
+        Some(("", max)) => Some(format!("{{0,{max}}}")),
+        Some((min, max)) => Some(format!("{{{min},{max}}}")),
+    };
+
+    match quantifier {
+        Some(quantifier) if lazy => format!("{quantifier}?"),
+        Some(quantifier) => quantifier,
+        // not a valid repetition: match the text literally
+        None if closed => format!("\\{{{body}\\}}"),
+        None => format!("\\{{{body}"),
     }
 }
 
