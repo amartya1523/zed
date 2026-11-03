@@ -291,6 +291,8 @@ Numbers from `6` to `100` pixels, inclusive.
 
 > Note: This setting has no effect in [Vim mode](../vim.md), as rewrap is already allowed everywhere.
 
+Rewrapped text is wrapped at the [`preferred_line_length`](#preferred-line-length) column. This applies even when `soft_wrap` is not set to `preferred_line_length`; for example, the default `Git Commit` settings use `"soft_wrap": "editor_width"` together with `"preferred_line_length": 72`, so commit messages soft-wrap at the editor width but rewrap at 72 columns.
+
 ## Auto Indent
 
 - Description: Controls automatic indentation behavior when typing. This can be specified on a per-language basis.
@@ -4716,7 +4718,7 @@ These settings belong inside the `file_finder` object.
 
 ## Preferred Line Length
 
-- Description: The column at which to soft-wrap lines, for buffers where soft-wrap is enabled.
+- Description: The column at which to soft-wrap lines, for buffers where soft-wrap is enabled. This is also the column that {#action editor::Rewrap} wraps text at, regardless of the `soft_wrap` setting.
 - Setting: `preferred_line_length`
 - Default: `80`
 
