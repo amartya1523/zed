@@ -1,0 +1,75 @@
+name: Verify branches
+
+on:
+  push:
+    branches: [ci-verify]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.mode }} ${{ matrix.branch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - branch: vim/substitute-repetition-operators
+            fix: 68ba8a8562d6d4a17d06ed71204fc7139cdc100d
+            mode: after
+            cmd: cargo test -p vim --lib
+          - branch: vim/substitute-repetition-operators
+            fix: 68ba8a8562d6d4a17d06ed71204fc7139cdc100d
+            mode: before
+            cmd: cargo test -p vim --lib -- test_replacement_parse_repetition_operators test_replacement_parse_literal_operators test_replace_with_repetition_operators
+          - branch: vim/start-of-line-resets-goal
+            fix: 2f75014aaeb30281e08f6d32a6c90625a489f46c
+            mode: after
+            cmd: cargo test -p vim --lib
+          - branch: vim/start-of-line-resets-goal
+            fix: 2f75014aaeb30281e08f6d32a6c90625a489f46c
+            mode: before
+            cmd: cargo test -p vim --lib -- test_start_of_line_on_empty_line_resets_goal
+          - branch: dev-container/fail-on-initialize-command-error
+            fix: e9fc8c1f6618e6ea4be8a8108018c15d1ba59023
+            mode: after
+            cmd: cargo test -p dev_container --lib
+          - branch: dev-container/fail-on-initialize-command-error
+            fix: e9fc8c1f6618e6ea4be8a8108018c15d1ba59023
+            mode: before
+            cmd: cargo test -p dev_container --lib -- lifecycle_script_fails_when_command_exits_unsuccessfully
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      RUST_BACKTRACE: 1
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
+          fetch-depth: 10
+      - name: Install system dependencies
+        run: ./script/linux
+      - name: Revert the fix (before mode)
+        if: matrix.mode == 'before'
+        run: |
+          git -c user.name=ci -c user.email=ci@localhost revert --no-edit ${{ matrix.fix }}
+          git log --oneline -4
+      - name: Run tests (after mode, expected to pass)
+        if: matrix.mode == 'after'
+        run: ${{ matrix.cmd }}
+      - name: Run new tests without the fix (before mode, expected to fail)
+        if: matrix.mode == 'before'
+        run: |
+          set +e
+          ${{ matrix.cmd }}
+          status=$?
+          if [ $status -eq 0 ]; then
+            echo "::error::new tests passed without the fix"
+            exit 1
+          fi
+          echo "new tests failed without the fix, as expected (exit $status)"
