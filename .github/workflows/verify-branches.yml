@@ -66,10 +66,10 @@ jobs:
         if: matrix.mode == 'before'
         run: |
           set +e
-          ${{ matrix.cmd }}
-          status=$?
-          if [ $status -eq 0 ]; then
-            echo "::error::new tests passed without the fix"
+          ${{ matrix.cmd }} 2>&1 | tee test-output.txt
+          if grep -q "test result: FAILED" test-output.txt; then
+            echo "new tests failed without the fix, as expected"
+          else
+            echo "::error::new tests did not fail without the fix"
             exit 1
           fi
-          echo "new tests failed without the fix, as expected (exit $status)"
