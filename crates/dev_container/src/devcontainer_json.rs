@@ -413,6 +413,9 @@ impl LifecycleScript {
                 log::error!(
                     "Command {command_name} produced a non-successful output. StdErr: {std_err}"
                 );
+                return Err(DevContainerError::CommandFailed(
+                    command.get_program().display().to_string(),
+                ));
             }
             let std_out = String::from_utf8_lossy(&output.stdout);
             log::debug!("Command {command_name} output:\n {std_out}");
