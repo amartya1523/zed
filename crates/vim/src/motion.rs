@@ -4267,6 +4267,19 @@ mod test {
     }
 
     #[gpui::test]
+    async fn test_start_of_line_on_empty_line_resets_goal(cx: &mut gpui::TestAppContext) {
+        let mut cx = VimTestContext::new(cx, true).await;
+
+        cx.set_state("The quick broˇwn\n\njumps over the\nlazy dog", Mode::Normal);
+        cx.simulate_keystrokes("j 0 j");
+        cx.assert_state("The quick brown\n\nˇjumps over the\nlazy dog", Mode::Normal);
+
+        // `0` on an empty line still doesn't delete anything
+        cx.simulate_keystrokes("k d 0");
+        cx.assert_state("The quick brown\nˇ\njumps over the\nlazy dog", Mode::Normal);
+    }
+
+    #[gpui::test]
     async fn test_end_of_line_with_vertical_motion(cx: &mut gpui::TestAppContext) {
         let mut cx = NeovimBackedTestContext::new(cx).await;
 
