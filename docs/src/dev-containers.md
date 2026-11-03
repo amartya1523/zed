@@ -66,6 +66,8 @@ You can specify extensions in `.devcontainer/devcontainer.json` under the "custo
 
 Note that extensions load for the Zed session, so these extensions will exist on your local Zed instances as well.
 
+Extensions are installed on your local machine, but extensions that provide language servers, debug adapters, or debug locators are also copied into the container when you connect. Their language servers and debug adapters run inside the container, alongside your project's tools and dependencies. Other extensions, such as themes, only run locally.
+
 ## Known Limitations
 
 > **Note:** This feature is still in development.
