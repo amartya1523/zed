@@ -901,7 +901,11 @@ impl Motion {
     pub fn infallible(&self) -> bool {
         use Motion::*;
         match self {
-            StartOfDocument | EndOfDocument | CurrentLine | EndOfLine { .. } => true,
+            StartOfDocument
+            | EndOfDocument
+            | CurrentLine
+            | StartOfLine { .. }
+            | EndOfLine { .. } => true,
             Down { .. }
             | Up { .. }
             | MiddleOfLine { .. }
@@ -914,7 +918,6 @@ impl Motion {
             | WrappingLeft
             | Right
             | WrappingRight
-            | StartOfLine { .. }
             | StartOfParagraph
             | EndOfParagraph
             | SentenceBackward
